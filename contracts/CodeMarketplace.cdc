@@ -1,0 +1,101 @@
+pub contract CodeMarketplace {
+
+    pub struct CodeListing {
+        pub let id: UInt64
+        pub let owner: Address
+        pub let title: String
+        pub let description: String
+        pub let price: UFix64
+        pub let codeHash: String
+        pub let timestamp: UFix64
+
+        init(
+            id: UInt64,
+            owner: Address,
+            title: String,
+            description: String,
+            price: UFix64,
+            codeHash: String
+        ) {
+            self.id = id
+            self.owner = owner
+            self.title = title
+            self.description = description
+            self.price = price
+            self.codeHash = codeHash
+            self.timestamp = getCurrentBlock().timestamp
+        }
+    }
+
+    pub var totalListings: UInt64
+    access(self) var listings: {UInt64: CodeListing}
+    access(self) var userListings: {Address: [UInt64]}
+
+    pub fun createListing(
+        title: String,
+        description: String,
+        price: UFix64,
+        codeHash: String
+    ) {
+        let listing = CodeListing(
+            id: self.totalListings,
+            owner: self.account.address,
+            title: title,
+            description: description,
+            price: price,
+            codeHash: codeHash
+        )
+
+        self.listings[self.totalListings] = listing
+
+        if self.userListings[self.account.address] == nil {
+            self.userListings[self.account.address] = []
+        }
+        self.userListings[self.account.address]!.append(self.totalListings)
+
+        self.totalListings = self.totalListings + 1
+    }
+
+    pub fun purchaseListing(id: UInt64) {
+        pre {
+            self.listings[id] != nil: "Listing does not exist"
+        }
+
+        // Payment logic would go here
+        // Transfer code access to buyer
+        
+        self.removeListing(id: id)
+    }
+
+    pub fun removeListing(id: UInt64) {
+        pre {
+            self.listings[id] != nil: "Listing does not exist"
+            self.listings[id]!.owner == self.account.address: "Only owner can remove listing"
+        }
+
+        self.listings.remove(key: id)
+    }
+
+    pub fun getListings(): [CodeListing] {
+        return self.listings.values
+    }
+
+    pub fun getUserListings(address: Address): [CodeListing] {
+        let userListingIds = self.userListings[address] ?? []
+        let results: [CodeListing] = []
+        
+        for id in userListingIds {
+            if let listing = self.listings[id] {
+                results.append(listing)
+            }
+        }
+        
+        return results
+    }
+
+    init() {
+        self.totalListings = 0
+        self.listings = {}
+        self.userListings = {}
+    }
+}
