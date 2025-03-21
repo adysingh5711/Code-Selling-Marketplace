@@ -16,10 +16,11 @@ import {
 } from '@mui/material';
 import { Menu as MenuIcon } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
+import FlowWallet from './FlowWallet';
 
 export default function Navigation() {
     const pathname = usePathname();
-    const { user, logout } = useApp();
+    const { user } = useApp();
     const [anchorEl, setAnchorEl] = useState(null);
 
     const handleMenu = (event) => {
@@ -28,11 +29,6 @@ export default function Navigation() {
 
     const handleClose = () => {
         setAnchorEl(null);
-    };
-
-    const handleLogout = () => {
-        handleClose();
-        logout();
     };
 
     return (
@@ -58,7 +54,7 @@ export default function Navigation() {
                 >
                     Code Marketplace
                 </Typography>
-                <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2 }}>
+                <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2, alignItems: 'center' }}>
                     <Button
                         color="inherit"
                         component={Link}
@@ -107,22 +103,16 @@ export default function Navigation() {
                                 open={Boolean(anchorEl)}
                                 onClose={handleClose}
                             >
-                                <MenuItem onClick={handleLogout}>Logout</MenuItem>
+                                <MenuItem component={Link} href="/profile" onClick={handleClose}>
+                                    Profile
+                                </MenuItem>
+                                <MenuItem component={Link} href="/settings" onClick={handleClose}>
+                                    Settings
+                                </MenuItem>
                             </Menu>
                         </>
-                    ) : (
-                        <Button
-                            color="inherit"
-                            component={Link}
-                            href="/login"
-                            sx={{
-                                textDecoration: 'none',
-                                borderBottom: pathname === '/login' ? '2px solid white' : 'none'
-                            }}
-                        >
-                            Login
-                        </Button>
-                    )}
+                    ) : null}
+                    <FlowWallet />
                 </Box>
             </Toolbar>
         </AppBar>
