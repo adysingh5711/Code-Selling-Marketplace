@@ -5,34 +5,61 @@ const fcl = require('@onflow/fcl');
 const t = require('@onflow/types');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+
+// Configure Flow client
+fcl.config({
+  'accessNode.api': process.env.FLOW_ACCESS_NODE,
+  'discovery.wallet': process.env.FLOW_DISCOVERY_WALLET,
+  'app.detail.title': 'Code Marketplace',
+  'app.detail.icon': '/favicon.ico'
+});
 
 // List code for sale
 router.post('/list', async (req, res) => {
   try {
-    const { title, description, price, codeHash, userAddress } = req.body;
+    const { title, description, price, code, userAddress } = req.body;
 
-    if (!title || !description || !price || !codeHash || !userAddress) {
+    if (!title || !description || !price || !code || !userAddress) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // In a production app, you'd handle the transaction signing through FCL
-    // For this demo, we'll just simulate a successful transaction
+    // Generate code hash
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
 
+    // Read the transaction code
     const transactionCode = fs.readFileSync(
       path.join(__dirname, '../../../transactions/ListCode.cdc'),
       'utf8'
     );
 
-    // In a real app, this would be handled by the client-side FCL
-    // Here we're just simulating the response
+    // Build the transaction
+    const transaction = await fcl.build([
+      fcl.transaction(transactionCode),
+      fcl.args([
+        fcl.arg(title, t.String),
+        fcl.arg(description, t.String),
+        fcl.arg(price, t.UFix64),
+        fcl.arg(codeHash, t.String)
+      ]),
+      fcl.proposer(fcl.authorization),
+      fcl.payer(fcl.authorization),
+      fcl.limit(1000)
+    ]);
+
+    // Send the transaction
+    const tx = await fcl.send(transaction);
+    const receipt = await fcl.tx(tx).onceSealed();
+
+    // Store the code securely (in production, use proper encryption)
+    const codePath = path.join(__dirname, '../../../uploads', `${codeHash}.txt`);
+    fs.writeFileSync(codePath, code);
+
     res.json({
       status: 'success',
-      transaction: {
-        id: 'simulated-tx-' + Date.now(),
-        status: 'SEALED',
-      },
+      transaction: receipt,
       listing: {
-        id: Math.floor(Math.random() * 1000),
+        id: receipt.events[0].data.id,
         owner: userAddress,
         title,
         description,
@@ -56,20 +83,51 @@ router.post('/buy', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Read the transaction code
     const transactionCode = fs.readFileSync(
       path.join(__dirname, '../../../transactions/BuyCode.cdc'),
       'utf8'
     );
 
-    // In a real app, this would be handled by the client-side FCL
-    // Here we're just simulating the response
+    // Build the transaction
+    const transaction = await fcl.build([
+      fcl.transaction(transactionCode),
+      fcl.args([
+        fcl.arg(listingId, t.UInt64)
+      ]),
+      fcl.proposer(fcl.authorization),
+      fcl.payer(fcl.authorization),
+      fcl.limit(1000)
+    ]);
+
+    // Send the transaction
+    const tx = await fcl.send(transaction);
+    const receipt = await fcl.tx(tx).onceSealed();
+
+    // Get the listing details
+    const listing = await fcl.query({
+      cadence: `
+                import CodeMarketplace from 0x9d2ade18cb6bea1a
+                pub fun main(listingId: UInt64): CodeMarketplace.Listing? {
+                    return CodeMarketplace.getListing(id: listingId)
+                }
+            `,
+      args: (arg, t) => [arg(listingId, t.UInt64)]
+    });
+
+    if (!listing) {
+      return res.status(404).json({ error: 'Listing not found' });
+    }
+
+    // Read the code file
+    const codePath = path.join(__dirname, '../../../uploads', `${listing.codeHash}.txt`);
+    const code = fs.readFileSync(codePath, 'utf8');
+
     res.json({
       status: 'success',
-      transaction: {
-        id: 'simulated-purchase-tx-' + Date.now(),
-        status: 'SEALED',
-      },
-      downloadUrl: `/api/download/${listingId}?userAddress=${buyerAddress}`
+      transaction: receipt,
+      code,
+      listing
     });
   } catch (error) {
     console.error('Error purchasing code:', error);
@@ -82,28 +140,18 @@ router.get('/user/:address', async (req, res) => {
   try {
     const { address } = req.params;
 
-    // In a real implementation, this would query the blockchain
-    // For demo, return mock data
-    res.json([
-      {
-        id: 1,
-        owner: address,
-        title: "React Component Library",
-        description: "A set of reusable React components with Tailwind styling",
-        price: "10.0",
-        codeHash: "abcdef1234567890",
-        timestamp: Date.now() - 86400000
-      },
-      {
-        id: 2,
-        owner: address,
-        title: "Node.js API Boilerplate",
-        description: "Express API starter with authentication and database setup",
-        price: "15.0",
-        codeHash: "1234567890abcdef",
-        timestamp: Date.now()
-      }
-    ]);
+    // Query the blockchain for user's listings
+    const listings = await fcl.query({
+      cadence: `
+                import CodeMarketplace from 0x9d2ade18cb6bea1a
+                pub fun main(owner: Address): [CodeMarketplace.Listing] {
+                    return CodeMarketplace.getListingsByOwner(owner: owner)
+                }
+            `,
+      args: (arg, t) => [arg(address, t.Address)]
+    });
+
+    res.json(listings);
   } catch (error) {
     console.error('Error fetching user listings:', error);
     res.status(500).json({ error: 'Failed to fetch user listings' });
